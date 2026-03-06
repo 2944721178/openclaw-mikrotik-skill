@@ -1,7 +1,7 @@
 {
   "name": "mikrotik",
   "displayName": "MikroTik RouterOS 管理",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "通过 API 连接和管理 MikroTik RouterOS 设备。支持查看设备状态、防火墙规则、网络配置，执行自定义 RouterOS 命令。",
   "author": "2944721178",
   "license": "MIT",
