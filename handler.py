@@ -91,11 +91,15 @@ def format_status(api, quick):
     identity = quick.system.get_identity()
     resource = quick.system.get_resource()
     
+    # 获取 RouterBOARD 信息（正确解读固件字段）
+    routerboard = quick.system.get_version()
+    
     lines = [
         "📡 MikroTik RouterOS 设备状态",
         "=" * 60,
         f"  设备名：{identity.get('name', 'N/A')}",
-        f"  版本：{resource.get('version', 'N/A')}",
+        f"  RouterOS: {resource.get('version', 'N/A')}",
+        f"  型号：{routerboard.get('model', 'N/A')} ({routerboard.get('board-name', 'N/A')})",
         f"  运行时间：{resource.get('uptime', 'N/A')}",
         f"  CPU: {resource.get('cpu', 'N/A')} @ {resource.get('cpu-frequency', 'N/A')}MHz",
         f"  CPU 负载：{resource.get('cpu-load', 'N/A')}%",
@@ -105,6 +109,14 @@ def format_status(api, quick):
         f"{int(resource.get('total-hdd-space', 1))/1024/1024:.1f}MB",
         "=" * 60,
     ]
+    
+    # 显示固件信息（正确解读字段）
+    if routerboard and routerboard.get('routerboard') == 'true':
+        lines.append(f"\n🔧 RouterBOARD 信息:")
+        lines.append(f"  序列号：{routerboard.get('serial-number', 'N/A')}")
+        # upgrade-firmware 是当前实际使用的固件版本
+        firmware = routerboard.get('upgrade-firmware', routerboard.get('current-firmware', 'N/A'))
+        lines.append(f"  固件版本：{firmware}")
     
     # 接口状态
     lines.append("\n🔌 网络接口:")
