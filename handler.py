@@ -654,7 +654,7 @@ def format_neighbors(api, quick):
 
 
 def format_scan(api, quick):
-    """格式化网络扫描结果（Winbox 方式 + 多来源）"""
+    """格式化网络扫描结果（从 LattePanda 本地独立扫描，不依赖 API）"""
     import sys
     import os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mikrotik-api'))
@@ -665,95 +665,67 @@ def format_scan(api, quick):
         "=" * 60,
     ]
     
-    all_devices = {}  # 用 MAC 地址去重
-    scanner = MikroTikScanner(timeout=5.0)
+    print("🔍 从 LattePanda 本地扫描（不依赖已知设备）...\n")
     
-    # 方法 1: 监听广播报文（类似 Winbox）
-    print("🔍 方法 1: 监听广播报文...")
-    broadcast_devices = scanner.listen_for_broadcasts()
-    for dev in broadcast_devices:
-        mac = dev.get('mac', '')
-        if mac:
-            all_devices[mac] = dev
+    # 使用独立扫描器
+    scanner = MikroTikScanner(timeout=2.0)
+    devices = scanner.scan()
     
-    # 方法 2: 从当前设备获取邻居
-    print("\n🔍 方法 2: 邻居发现...")
-    neighbors = scanner.from_neighbors(
-        api.host, 
-        api.username, 
-        api.password
-    )
-    for dev in neighbors:
-        mac = dev.get('mac', '')
-        if mac and mac not in all_devices:
-            all_devices[mac] = dev
+    # 获取 LattePanda 本机 IP（用于排除，不扫描自己）
+    self_ips = []
+    try:
+        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
+        self_ips = result.stdout.strip().split()
+    except:
+        pass
     
-    # 方法 3: 从 ARP 表发现
-    print("\n🔍 方法 3: ARP 表...")
-    arp_entries = quick.network.get_arp()
-    arp_count = 0
-    for entry in arp_entries:
-        ip = entry.get('address', '')
-        mac = entry.get('mac-address', '')
-        interface = entry.get('interface', '')
-        
-        # 跳过空 MAC 和广播 MAC
-        if not mac or mac == '00:00:00:00:00:00' or mac.startswith('33:33'):
-            continue
-        
-        # 如果 MAC 已经存在，跳过
-        if mac in all_devices:
-            continue
-        
-        # 检查是否是 MikroTik 设备（通过 OUI 前缀）
-        # MikroTik 的 OUI: 00:0C:42, 4C:5E:0C, D4:CA:6D 等
-        mikrotik_ouis = ['00:0C:42', '4C:5E:0C', 'D4:CA:6D', 'CC:2D:E0']
-        is_mikrotik = any(mac.startswith(oui) for oui in mikrotik_ouis)
-        
-        # 或者通过接口名判断（wireguard 对端通常是 MikroTik）
-        is_wireguard = 'wireguard' in interface.lower()
-        
-        if is_mikrotik or is_wireguard:
-            device = {
-                'ip': ip,
-                'mac': mac,
-                'interface': interface,
-                'identity': 'MikroTik' if is_mikrotik else f'MikroTik ({interface})',
-                'source': 'arp'
-            }
-            all_devices[mac] = device
-            arp_count += 1
-            print(f"  ✅ 发现：{device['identity']} ({ip})")
+    # 排除 LattePanda 本机 IP
+    if self_ips:
+        original_count = len(devices)
+        devices = [dev for dev in devices if dev.get('ip') not in self_ips]
+        if original_count > len(devices):
+            print(f"\nℹ️ 排除 {original_count - len(devices)} 个本机 IP")
+            # 更新 scanner 的设备列表
+            scanner.discovered_devices = devices
     
-    if arp_count == 0:
-        print("  (ARP 表中未发现新的 MikroTik 设备)")
-    
-    # 方法 4: 检查默认网关
-    print("\n🔍 方法 4: 检查网关...")
-    routes = quick.network.get_routes()
-    for route in routes:
-        if route.get('dst-address') == '0.0.0.0/0':
-            gateway = route.get('gateway', '')
-            if gateway:
-                # 查找网关的 MAC
-                for entry in arp_entries:
-                    if entry.get('address') == gateway:
-                        mac = entry.get('mac-address', '')
-                        if mac and mac not in all_devices:
-                            device = {
-                                'ip': gateway,
-                                'mac': mac,
-                                'identity': 'MikroTik (网关)',
-                                'source': 'gateway'
-                            }
-                            all_devices[mac] = device
-                            print(f"  ✅ 发现网关：{gateway}")
-                        break
-    
-    scanner.discovered_devices = list(all_devices.values())
+    # 如果已连接 API，尝试获取型号信息（可选增强）
+    try:
+        if api and api.connected and devices:
+            print("\n🔍 从 API 获取设备型号（可选）...")
+            neighbors = quick.network.get_neighbors()
+            neighbor_map = {}
+            for nbr in neighbors:
+                mac = nbr.get('mac-address', '').upper()
+                if mac:
+                    board = nbr.get('board', '')
+                    neighbor_map[mac] = {
+                        'model': board if board else nbr.get('platform', ''),
+                        'version': nbr.get('version', '')
+                    }
+            
+            # 更新设备信息
+            for dev in devices:
+                mac = dev.get('mac', '')
+                if mac in neighbor_map:
+                    info = neighbor_map[mac]
+                    dev['model'] = info.get('model', '')
+                    dev['version'] = info.get('version', '')
+                    if dev['model']:
+                        print(f"  ✅ {dev['ip']}: {dev['model']}")
+    except Exception as e:
+        # API 不可用时，只显示 Unknown
+        pass
     
     # 格式化结果
+    print()
     lines.append(scanner.format_results())
+    
+    if not scanner.discovered_devices:
+        lines.append("\n💡 提示:")
+        lines.append("  - 确保 MikroTik 设备启用了 MAC Telnet/Winbox 发现")
+        lines.append("  - 命令：/tool mac-server winbox set enabled=yes")
+        lines.append("  - 检查防火墙是否允许 UDP 5678 端口")
+        lines.append("  - 确认 LattePanda 和 MikroTik 设备在同一网段")
     
     return "\n".join(lines)
 
@@ -1055,6 +1027,7 @@ def execute_command(device, command):
             else:
                 result = "(无结果)"
         elif 'scan' in command.lower() or '扫描' in command.lower():
+            # 扫描功能独立工作，不依赖设备配置
             result = format_scan(api, quick)
         else:
             # 执行自定义命令
@@ -1108,6 +1081,10 @@ def handle_message(message):
                             break
             except:
                 pass
+        
+        # 扫描命令独立处理，不依赖设备配置
+        if '扫描' in message or 'scan' in message:
+            return format_scan(None, None)
         
         # 如果没有匹配到设备名称，使用默认值
         if not device:

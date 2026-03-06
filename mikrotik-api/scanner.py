@@ -2,195 +2,150 @@
 """
 MikroTik 设备扫描器 - 类似 Winbox 的扫描功能
 
-Winbox 扫描原理：
-1. 监听 UDP 5678 端口的广播报文
-2. MikroTik 设备会定期发送发现广播（MAC Telnet/Winbox 协议）
-3. 解析广播报文获取设备信息（MAC 地址、IP、身份标识等）
-
-参考：https://wiki.mikrotik.com/wiki/Manual:MAC_Telnet
+从本地主机直接扫描局域网中的 MikroTik 设备
+不依赖任何已知的 MikroTik 设备或 API 连接
 """
 
 import socket
 import struct
 import time
-import random
-from typing import List, Dict, Optional, Tuple
+import subprocess
+from typing import List, Dict, Optional
 
 
 class MikroTikScanner:
-    """MikroTik 设备扫描器（类似 Winbox）"""
+    """MikroTik 设备扫描器（独立扫描，不依赖 API）"""
     
-    # Winbox/MAC Telnet 协议相关
+    # MikroTik 发现协议端口
     WINBOX_PORT = 5678
     BROADCAST_ADDR = '255.255.255.255'
     
-    # 协议字段类型
-    TYPE_IDENTITY = 0x0001
-    TYPE_IP = 0x0005
-    TYPE_MAC = 0x0006
-    TYPE_TIMESTAMP = 0x0007
-    TYPE_VERSION = 0x0008
-    TYPE_PLATFORM = 0x0009
-    TYPE_BOARD = 0x000A
+    # MikroTik OUI 前缀（用于识别）
+    MIKROTIK_OUIS = [
+        '00:0C:42', '4C:5E:0C', 'D4:CA:6D', 'CC:2D:E0',
+        '08:55:31', '48:8F:5A', '2C:AB:00', '64:D1:54',
+        '78:8B:77', '84:D1:54', 'B8:69:F4'
+    ]
     
-    def __init__(self, timeout: float = 3.0):
+    def __init__(self, timeout: float = 2.0):
         """
         初始化扫描器
         
         Args:
-            timeout: 监听超时（秒）
+            timeout: 扫描超时（秒）
         """
         self.timeout = timeout
         self.discovered_devices: List[Dict] = []
     
-    def listen_for_broadcasts(self) -> List[Dict]:
+    def get_local_subnets(self) -> List[str]:
         """
-        监听 MikroTik 设备的广播报文（Winbox 方式）
+        获取本地所有网段
+        
+        Returns:
+            网段列表（如 ['192.168.1.0/24', '10.0.0.0/24']）
+        """
+        subnets = []
+        try:
+            result = subprocess.run(['ip', '-o', 'addr', 'show'], 
+                                   capture_output=True, text=True, timeout=5)
+            
+            for line in result.stdout.split('\n'):
+                if 'inet ' in line and '/' in line:
+                    parts = line.split()
+                    for i, part in enumerate(parts):
+                        if '/' in part and '.' in part:
+                            ip, prefix = part.split('/')
+                            if int(prefix) == 24:
+                                # 排除 lo 和虚拟接口
+                                iface = parts[1] if len(parts) > 1 else ''
+                                if iface not in ['lo', 'docker0'] and not iface.startswith('br-'):
+                                    octets = ip.split('.')
+                                    subnet = f"{octets[0]}.{octets[1]}.{octets[2]}.0/{prefix}"
+                                    if subnet not in subnets:
+                                        subnets.append(subnet)
+        except Exception as e:
+            print(f"⚠️ 获取本地网段失败：{e}")
+        
+        return subnets
+    
+    def get_local_ips(self) -> List[str]:
+        """
+        获取本机所有 IP 地址
+        
+        Returns:
+            IP 地址列表
+        """
+        ips = []
+        try:
+            result = subprocess.run(['hostname', '-I'], 
+                                   capture_output=True, text=True, timeout=5)
+            ips = result.stdout.strip().split()
+        except:
+            pass
+        return ips
+    
+    def scan_arp_table(self) -> List[Dict]:
+        """
+        从本地 ARP 表发现 MikroTik 设备
         
         Returns:
             发现的设备列表
         """
-        print("🔍 监听 MikroTik 广播报文（类似 Winbox）...")
-        print(f"   监听端口：{self.WINBOX_PORT}")
-        print(f"   超时时间：{self.timeout}秒")
-        print()
-        
-        devices = {}  # 用 MAC 地址去重
+        devices = []
+        local_ips = self.get_local_ips()
         
         try:
-            # 创建 UDP socket，绑定到 5678 端口
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            result = subprocess.run(['ip', 'neigh'], 
+                                   capture_output=True, text=True, timeout=5)
             
-            # 绑定到所有接口的 5678 端口
-            sock.bind(('0.0.0.0', self.WINBOX_PORT))
-            sock.settimeout(1.0)
-            
-            print("  ✅ 开始监听...\n")
-            
-            start_time = time.time()
-            
-            while time.time() - start_time < self.timeout:
-                try:
-                    data, addr = sock.recvfrom(2048)
+            for line in result.stdout.split('\n'):
+                parts = line.split()
+                if len(parts) >= 5:
+                    ip = parts[0]
                     
-                    # 解析 MikroTik 广播报文
-                    device = self._parse_discovery_packet(data, addr[0])
+                    # 排除本机 IP
+                    if ip in local_ips:
+                        continue
                     
-                    if device:
-                        mac = device.get('mac', '')
-                        if mac and mac not in devices:
-                            devices[mac] = device
-                            print(f"  ✅ 发现：{device.get('identity', 'Unknown')}")
-                            print(f"      IP: {addr[0]}")
-                            print(f"      MAC: {mac}")
-                            if device.get('platform'):
-                                print(f"      型号：{device.get('platform')}")
-                            if device.get('version'):
-                                print(f"      版本：{device.get('version')}")
-                            print()
-                
-                except socket.timeout:
-                    continue
-                except Exception as e:
-                    pass
-            
-            sock.close()
-            
-        except PermissionError:
-            print("  ❌ 权限不足，无法绑定 5678 端口（需要 root 权限）")
-        except OSError as e:
-            print(f"  ❌ 端口绑定失败：{e}")
-            print("     可能端口已被占用，或需要 root 权限")
+                    if parts[1] == 'dev':
+                        # 查找 MAC 地址
+                        mac = ''
+                        for i, part in enumerate(parts):
+                            if part == 'lladdr':
+                                mac = parts[i+1].upper() if i+1 < len(parts) else ''
+                                break
+                        
+                        if mac and mac != '00:00:00:00:00:00':
+                            # 检查是否是 MikroTik OUI
+                            is_mikrotik = any(mac.startswith(oui) for oui in self.MIKROTIK_OUIS)
+                            
+                            if is_mikrotik:
+                                device = {
+                                    'ip': ip,
+                                    'mac': mac,
+                                    'identity': 'MikroTik',
+                                    'model': 'Unknown',
+                                    'version': '',
+                                    'source': 'arp'
+                                }
+                                devices.append(device)
+                                print(f"  ✅ 发现：{ip} ({mac})")
+        except Exception as e:
+            print(f"⚠️ ARP 表扫描失败：{e}")
         
-        self.discovered_devices = list(devices.values())
-        return self.discovered_devices
+        return devices
     
-    def _parse_discovery_packet(self, data: bytes, source_ip: str) -> Optional[Dict]:
+    def send_discovery_request(self, subnet: str) -> List[Dict]:
         """
-        解析 MikroTik 发现协议报文
-        
-        报文格式：
-        - 6 字节：目标 MAC（通常是 FF:FF:FF:FF:FF:FF）
-        - 2 字节：协议类型
-        - N 字节：TLV 数据（Type-Length-Value）
+        发送 MikroTik 发现请求到指定子网
         
         Args:
-            data: 原始报文数据
-            source_ip: 源 IP 地址
-        
-        Returns:
-            解析后的设备信息
-        """
-        if len(data) < 8:
-            return None
-        
-        device = {
-            'ip': source_ip,
-            'source': 'broadcast'
-        }
-        
-        try:
-            # 跳过前 6 字节（目标 MAC）
-            offset = 6
-            
-            # 读取协议类型（2 字节）
-            proto_type = struct.unpack('!H', data[offset:offset+2])[0]
-            offset += 2
-            
-            # 解析 TLV 数据
-            while offset < len(data) - 4:
-                # 类型（2 字节）
-                tlv_type = struct.unpack('!H', data[offset:offset+2])[0]
-                offset += 2
-                
-                # 长度（2 字节）
-                tlv_len = struct.unpack('!H', data[offset:offset+2])[0]
-                offset += 2
-                
-                # 值
-                if offset + tlv_len > len(data):
-                    break
-                
-                value = data[offset:offset+tlv_len]
-                offset += tlv_len
-                
-                # 根据类型解析
-                if tlv_type == self.TYPE_IDENTITY:
-                    device['identity'] = value.decode('utf-8', errors='ignore').strip()
-                elif tlv_type == self.TYPE_MAC:
-                    if len(value) == 6:
-                        device['mac'] = ':'.join([f'{b:02X}' for b in value])
-                elif tlv_type == self.TYPE_IP:
-                    # 已经有 source_ip 了
-                    pass
-                elif tlv_type == self.TYPE_PLATFORM:
-                    device['platform'] = value.decode('utf-8', errors='ignore').strip()
-                elif tlv_type == self.TYPE_VERSION:
-                    device['version'] = value.decode('utf-8', errors='ignore').strip()
-                elif tlv_type == self.TYPE_BOARD:
-                    device['board'] = value.decode('utf-8', errors='ignore').strip()
-            
-            # 至少要有 MAC 地址才认为是有效的 MikroTik 设备
-            if 'mac' in device:
-                return device
-            
-        except Exception as e:
-            pass
-        
-        return None
-    
-    def send_discovery_request(self) -> List[Dict]:
-        """
-        主动发送发现请求，触发设备响应
+            subnet: 子网地址（如 '192.168.1.0/24'）
         
         Returns:
             发现的设备列表
         """
-        print("🔍 发送发现请求广播...")
-        
-        devices = {}
+        devices = []
         
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -198,13 +153,20 @@ class MikroTikScanner:
             sock.settimeout(1.0)
             
             # 构建发现请求报文
-            # 格式：目标 MAC(6) + 协议类型 (2) + TLV 数据
-            my_mac = b'\x00\x00\x00\x00\x00\x00'  # 随便填
-            proto_type = struct.pack('!H', 0x0001)  # 发现请求
-            
-            # 发送请求
+            my_mac = b'\x00\x00\x00\x00\x00\x00'
+            proto_type = struct.pack('!H', 0x0001)
             discovery_msg = my_mac + proto_type
-            sock.sendto(discovery_msg, (self.BROADCAST_ADDR, self.WINBOX_PORT))
+            
+            # 获取子网中的所有 IP
+            ips = self._get_subnet_ips(subnet)
+            
+            # 发送到每个 IP
+            for ip in ips:
+                try:
+                    sock.sendto(discovery_msg, (ip, self.WINBOX_PORT))
+                    time.sleep(0.01)
+                except:
+                    pass
             
             # 接收响应
             start_time = time.time()
@@ -215,8 +177,8 @@ class MikroTikScanner:
                     
                     if device:
                         mac = device.get('mac', '')
-                        if mac and mac not in devices:
-                            devices[mac] = device
+                        if mac and not any(d.get('mac') == mac for d in devices):
+                            devices.append(device)
                             print(f"  ✅ 发现：{device.get('identity', 'Unknown')} ({addr[0]})")
                 except socket.timeout:
                     break
@@ -226,65 +188,133 @@ class MikroTikScanner:
             sock.close()
             
         except Exception as e:
-            print(f"  ⚠️ 发送请求失败：{e}")
+            print(f"⚠️ 发送请求失败：{e}")
         
-        return list(devices.values())
+        return devices
     
-    def from_neighbors(self, api_host: str, api_user: str = 'admin', 
-                       api_pass: str = '') -> List[Dict]:
-        """
-        从已连接的 MikroTik 设备获取邻居信息
+    def _get_subnet_ips(self, subnet: str) -> List[str]:
+        """获取子网中的所有 IP 地址"""
+        network, prefix = subnet.split('/')
+        prefix = int(prefix)
         
-        Args:
-            api_host: MikroTik API 地址
-            api_user: 用户名
-            api_pass: 密码
+        network_bytes = struct.unpack('!I', socket.inet_aton(network))[0]
+        mask = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+        network_masked = network_bytes & mask
+        broadcast = network_masked | (~mask & 0xFFFFFFFF)
         
-        Returns:
-            邻居设备列表
-        """
-        print(f"🔍 从 {api_host} 获取邻居信息...")
+        start_ip = network_masked + 1
+        end_ip = broadcast - 1
+        
+        ips = []
+        for ip_int in range(start_ip, end_ip + 1):
+            ips.append(socket.inet_ntoa(struct.pack('!I', ip_int)))
+        
+        return ips
+    
+    def _parse_discovery_packet(self, data: bytes, source_ip: str) -> Optional[Dict]:
+        """解析 MikroTik 发现协议报文"""
+        if len(data) < 8:
+            return None
+        
+        device = {
+            'ip': source_ip,
+            'source': 'broadcast'
+        }
         
         try:
-            import sys
-            import os
-            sys.path.insert(0, os.path.dirname(__file__))
-            from client import MikroTikAPI
+            offset = 6  # 跳过目标 MAC
+            proto_type = struct.unpack('!H', data[offset:offset+2])[0]
+            offset += 2
             
-            api = MikroTikAPI(api_host, api_user, api_pass)
-            if api.connect() and api.login():
-                # 获取邻居
-                neighbors = api.run_command('/ip/neighbor/print')
+            # TLV 字段映射
+            TLV_IDENTITY = 0x0001
+            TLV_MAC = 0x0006
+            TLV_PLATFORM = 0x0009
+            TLV_VERSION = 0x0008
+            TLV_BOARD = 0x000A
+            
+            while offset < len(data) - 4:
+                tlv_type = struct.unpack('!H', data[offset:offset+2])[0]
+                offset += 2
                 
-                devices = []
-                for nbr in neighbors:
-                    identity = nbr.get('identity', 'Unknown')
-                    address = nbr.get('address', '')
-                    mac = nbr.get('mac-address', '')
-                    interface = nbr.get('interface', '')
-                    platform = nbr.get('platform', '')
-                    
-                    if address:
-                        device = {
-                            'ip': address,
-                            'identity': identity,
-                            'mac': mac,
-                            'interface': interface,
-                            'platform': platform,
-                            'version': nbr.get('version', ''),
-                            'source': 'neighbor'
-                        }
-                        devices.append(device)
-                        print(f"  ✅ 发现：{identity} ({address})")
+                tlv_len = struct.unpack('!H', data[offset:offset+2])[0]
+                offset += 2
                 
-                api.disconnect()
-                return devices
+                if offset + tlv_len > len(data):
+                    break
+                
+                value = data[offset:offset+tlv_len]
+                offset += tlv_len
+                
+                if tlv_type == TLV_IDENTITY:
+                    device['identity'] = value.decode('utf-8', errors='ignore').strip()
+                elif tlv_type == TLV_MAC:
+                    if len(value) == 6:
+                        device['mac'] = ':'.join([f'{b:02X}' for b in value])
+                elif tlv_type == TLV_PLATFORM:
+                    device['platform'] = value.decode('utf-8', errors='ignore').strip()
+                elif tlv_type == TLV_VERSION:
+                    device['version'] = value.decode('utf-8', errors='ignore').strip()
+                elif tlv_type == TLV_BOARD:
+                    device['board'] = value.decode('utf-8', errors='ignore').strip()
+            
+            # 使用 board 作为型号
+            if 'board' in device:
+                device['model'] = device['board']
+            elif 'platform' in device and device['platform'] != 'MikroTik':
+                device['model'] = device['platform']
             else:
-                print(f"  ❌ 无法连接到 {api_host}")
+                device['model'] = 'Unknown'
+            
+            if 'mac' in device:
+                return device
+            
         except Exception as e:
-            print(f"  ❌ 错误：{e}")
+            pass
         
-        return []
+        return None
+    
+    def scan(self) -> List[Dict]:
+        """
+        执行完整扫描
+        
+        Returns:
+            发现的设备列表
+        """
+        all_devices = {}
+        
+        # 获取本地网段
+        subnets = self.get_local_subnets()
+        if not subnets:
+            print("⚠️ 无法获取本地网段")
+            return []
+        
+        print(f"📡 扫描 {len(subnets)} 个本地网段:")
+        for subnet in subnets:
+            print(f"   - {subnet}")
+        print()
+        
+        # 方法 1: 扫描 ARP 表
+        print("🔍 方法 1: 扫描 ARP 表...")
+        arp_devices = self.scan_arp_table()
+        for dev in arp_devices:
+            mac = dev.get('mac', '')
+            if mac:
+                all_devices[mac] = dev
+        
+        # 方法 2: 主动发现请求
+        if not arp_devices:
+            print("\n🔍 方法 2: 发送发现请求...")
+            for subnet in subnets:
+                print(f"   扫描：{subnet}")
+                devices = self.send_discovery_request(subnet)
+                for dev in devices:
+                    mac = dev.get('mac', '')
+                    if mac and mac not in all_devices:
+                        all_devices[mac] = dev
+        
+        self.discovered_devices = list(all_devices.values())
+        return self.discovered_devices
     
     def format_results(self) -> str:
         """格式化扫描结果"""
@@ -298,7 +328,7 @@ class MikroTikScanner:
             identity = device.get('identity', 'Unknown')
             ip = device.get('ip', 'N/A')
             mac = device.get('mac', '')
-            platform = device.get('platform', '')
+            model = device.get('model', '')
             version = device.get('version', '')
             source = device.get('source', 'unknown')
             
@@ -306,15 +336,15 @@ class MikroTikScanner:
             lines.append(f"      IP: {ip}")
             if mac:
                 lines.append(f"      MAC: {mac}")
-            if platform:
-                lines.append(f"      型号：{platform}")
+            if model and model != 'Unknown':
+                lines.append(f"      型号：{model}")
             if version:
                 lines.append(f"      版本：{version}")
             
-            if source == 'neighbor':
-                lines.append(f"      来源：邻居发现")
+            if source == 'arp':
+                lines.append(f"      来源：ARP 表")
             elif source == 'broadcast':
-                lines.append(f"      来源：广播监听")
+                lines.append(f"      来源：广播发现")
             else:
                 lines.append(f"      来源：主动发现")
             
@@ -325,21 +355,13 @@ class MikroTikScanner:
 
 def scan_network() -> str:
     """
-    扫描网络中的 MikroTik 设备（Winbox 方式）
+    扫描网络中的 MikroTik 设备
     
     Returns:
         格式化的扫描结果
     """
-    scanner = MikroTikScanner(timeout=5.0)
-    
-    # 方法 1: 监听广播
-    devices = scanner.listen_for_broadcasts()
-    
-    # 如果没有发现设备，尝试主动发送请求
-    if not devices:
-        print("\n  未监听到广播，尝试主动发送发现请求...")
-        devices = scanner.send_discovery_request()
-    
+    scanner = MikroTikScanner(timeout=2.0)
+    scanner.scan()
     return scanner.format_results()
 
 
