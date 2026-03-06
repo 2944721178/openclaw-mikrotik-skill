@@ -169,8 +169,8 @@ with MikroTikAPI('10.0.5.4') as api:
 ✅ 已连接 2 个无线客户端:
 
   【客户端 1】
-    MAC: FE:F5:CF:4D:B5:32
-    SSID: wukefenggao | 接口：cap2
+    MAC: 00:11:22:33:44:55
+    SSID: MyWiFi | 接口：cap2
     信号：-49 ⭐⭐⭐
     速率：TX 702Mbps-80MHz/2S | RX 585Mbps-80MHz/2S
     连接时间：1d47m
@@ -178,8 +178,8 @@ with MikroTikAPI('10.0.5.4') as api:
        流量：TX 1.8GB / RX 1.2GB
 
   【客户端 2】
-    MAC: D2:D6:51:AD:4A:2F
-    SSID: wukefenggao | 接口：cap2
+    MAC: AA:BB:CC:DD:EE:FF
+    SSID: MyWiFi | 接口：cap2
     信号：-34 ⭐⭐⭐⭐⭐
     速率：TX 866.6Mbps-80MHz/2S/SGI | RX 702Mbps-80MHz/2S
     连接时间：20m
