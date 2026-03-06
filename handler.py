@@ -228,6 +228,87 @@ def format_dhcp(api, quick):
     return "\n".join(lines)
 
 
+def format_clients(api, quick):
+    """格式化无线客户端列表 (CAPsMAN)"""
+    lines = [
+        "📶 无线客户端 (CAPsMAN)",
+        "=" * 60,
+    ]
+    
+    # 获取 CAPsMAN 注册表
+    reg = api.run_command('/caps-man/registration-table/print')
+    
+    if reg:
+        lines.append(f"\n✅ 已连接 {len(reg)} 个无线客户端:\n")
+        for i, client in enumerate(reg, 1):
+            mac = client.get('mac-address', 'N/A')
+            ssid = client.get('ssid', 'N/A')
+            iface = client.get('interface', 'N/A')
+            signal = client.get('rx-signal', 'N/A')
+            tx_rate = client.get('tx-rate', 'N/A')
+            rx_rate = client.get('rx-rate', 'N/A')
+            uptime = client.get('uptime', 'N/A')
+            last_ip = client.get('last-ip', 'N/A')
+            packets_tx = client.get('packets', 'N/A')
+            bytes_tx = client.get('bytes', 'N/A')
+            
+            # 解析流量统计
+            traffic_info = ""
+            if packets_tx != 'N/A' and ',' in str(packets_tx):
+                pkt = str(packets_tx).split(',')
+                bytes_list = str(bytes_tx).split(',') if ',' in str(bytes_tx) else ['N/A', 'N/A']
+                # 内联字节格式化
+                def fmt_b(b):
+                    if not b.isdigit():
+                        return 'N/A'
+                    b = int(b)
+                    if b >= 1024**3:
+                        return f"{b/1024**3:.1f}GB"
+                    elif b >= 1024**2:
+                        return f"{b/1024**2:.1f}MB"
+                    elif b >= 1024:
+                        return f"{b/1024:.1f}KB"
+                    else:
+                        return f"{b}B"
+                tx_b = fmt_b(bytes_list[0])
+                rx_b = fmt_b(bytes_list[1]) if len(bytes_list) > 1 else 'N/A'
+                traffic_info = f"\n       流量：TX {tx_b} / RX {rx_b}"
+            
+            # 信号强度评级
+            signal_rating = ""
+            try:
+                sig = int(signal.replace(' dBm', '').replace('-', '')) if signal != 'N/A' else 0
+                if sig <= 35:
+                    signal_rating = "⭐⭐⭐⭐⭐"
+                elif sig <= 45:
+                    signal_rating = "⭐⭐⭐⭐"
+                elif sig <= 55:
+                    signal_rating = "⭐⭐⭐"
+                elif sig <= 65:
+                    signal_rating = "⭐⭐"
+                else:
+                    signal_rating = "⭐"
+            except:
+                pass
+            
+            lines.append(f"  【客户端 {i}】")
+            lines.append(f"    MAC: {mac}")
+            lines.append(f"    SSID: {ssid} | 接口：{iface}")
+            lines.append(f"    信号：{signal} {signal_rating}")
+            lines.append(f"    速率：TX {tx_rate} | RX {rx_rate}")
+            lines.append(f"    连接时间：{uptime}")
+            lines.append(f"    IP 地址：{last_ip}{traffic_info}")
+            lines.append("")
+    else:
+        lines.append("\n❌ 当前没有无线客户端连接")
+        lines.append("\n💡 提示：")
+        lines.append("  1. 确认 CAPsMAN 已启用 (/caps-man/manager)")
+        lines.append("  2. 确认 AP 已注册为 CAP (/interface/wireless/cap)")
+        lines.append("  3. 检查无线配置模板 (/caps-man/configuration)")
+    
+    return "\n".join(lines)
+
+
 def format_arp(api, quick):
     """格式化 ARP 表"""
     lines = [
@@ -987,6 +1068,8 @@ def execute_command(device, command):
             result = format_dhcp(api, quick)
         elif 'arp' in command.lower():
             result = format_arp(api, quick)
+        elif 'client' in command.lower() or '客户端' in command or '无线' in command or 'wifi' in command or 'wi-fi' in command:
+            result = format_clients(api, quick)
         elif 'wireguard' in command.lower() or 'wg' in command.lower():
             result = format_wireguard(api, quick)
         elif 'user' in command.lower() or '用户' in command:
@@ -1097,6 +1180,8 @@ def handle_message(message):
             return execute_command(device, 'firewall')
         elif '接口' in message or 'interface' in message:
             return execute_command(device, 'interfaces')
+        elif '客户端' in message or '无线' in message or 'wifi' in message or 'wi-fi' in message:
+            return execute_command(device, 'clients')
         elif '执行' in message or '命令' in message:
             # 提取命令路径
             if '/ip/' in message or '/system/' in message:

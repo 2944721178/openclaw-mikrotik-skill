@@ -101,8 +101,26 @@ npx clawhub install mikrotik
 mikrotik 防火墙配置
 检查路由器运行情况
 查看网络接口
+查看无线客户端
+mikrotik office 客户端
+mikrotik ap wifi
 在 mikrotik 上执行 /system/resource/print
 ```
+
+### 可用命令
+
+| 命令 | 说明 |
+|------|------|
+| `状态` / `status` | 查看设备状态（CPU、内存、运行时间） |
+| `防火墙` / `firewall` | 查看防火墙规则（filter、NAT） |
+| `接口` / `interface` | 查看网络接口列表 |
+| `客户端` / `client` / `无线` / `wifi` | **查看无线客户端连接（CAPsMAN）** ⭐ |
+| `路由` / `route` | 查看路由表 |
+| `DHCP` | 查看 DHCP 配置和租约 |
+| `ARP` | 查看 ARP 表 |
+| `流量` / `traffic` | 查看接口流量统计 |
+| `WireGuard` / `wg` | 查看 WireGuard 隧道状态 |
+| `扫描` / `scan` | 扫描局域网设备（无需配置） |
 
 ### 命令行工具
 
@@ -127,6 +145,8 @@ with MikroTikAPI('10.0.5.4') as api:
 
 ## 示例输出
 
+### 设备状态
+
 ```
 📡 MikroTik RouterOS 设备状态
 ============================================================
@@ -138,6 +158,33 @@ with MikroTikAPI('10.0.5.4') as api:
   内存：61.6MB / 256.0MB
   存储：3.6MB / 16.0MB
 ============================================================
+```
+
+### 无线客户端（v1.8.1 新增）⭐
+
+```
+📶 无线客户端 (CAPsMAN)
+============================================================
+
+✅ 已连接 2 个无线客户端:
+
+  【客户端 1】
+    MAC: FE:F5:CF:4D:B5:32
+    SSID: wukefenggao | 接口：cap2
+    信号：-49 ⭐⭐⭐
+    速率：TX 702Mbps-80MHz/2S | RX 585Mbps-80MHz/2S
+    连接时间：1d47m
+    IP 地址：10.254.252.41
+       流量：TX 1.8GB / RX 1.2GB
+
+  【客户端 2】
+    MAC: D2:D6:51:AD:4A:2F
+    SSID: wukefenggao | 接口：cap2
+    信号：-34 ⭐⭐⭐⭐⭐
+    速率：TX 866.6Mbps-80MHz/2S/SGI | RX 702Mbps-80MHz/2S
+    连接时间：20m
+    IP 地址：10.254.252.42
+       流量：TX 29.7MB / RX 892KB
 ```
 
 ## 依赖
