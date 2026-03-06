@@ -174,7 +174,7 @@ with MikroTikAPI('10.0.5.4') as api:
     信号：-49 ⭐⭐⭐
     速率：TX 702Mbps-80MHz/2S | RX 585Mbps-80MHz/2S
     连接时间：1d47m
-    IP 地址：10.254.252.41
+    IP 地址：192.168.1.101
        流量：TX 1.8GB / RX 1.2GB
 
   【客户端 2】
@@ -183,7 +183,7 @@ with MikroTikAPI('10.0.5.4') as api:
     信号：-34 ⭐⭐⭐⭐⭐
     速率：TX 866.6Mbps-80MHz/2S/SGI | RX 702Mbps-80MHz/2S
     连接时间：20m
-    IP 地址：10.254.252.42
+    IP 地址：192.168.1.102
        流量：TX 29.7MB / RX 892KB
 ```
 
