@@ -47,7 +47,7 @@ def get_device_config(device_name=None):
             # 格式：- **名称**：IP, 用户名，密码 (可选)
             # 示例：- **工位**：10.0.5.4, admin, 空密码
             # 示例：- **home**：192.168.88.1, admin, mypassword123
-            mikrotik_section = re.search(r'###\s*MikroTik 设备\s*\n(.*?)(?=\n###|\Z)', content, re.DOTALL | re.IGNORECASE)
+            mikrotik_section = re.search(r'###\s*MikroTik 设备.*?\n(.*?)(?=\n###|\Z)', content, re.DOTALL | re.IGNORECASE)
             if mikrotik_section:
                 section_text = mikrotik_section.group(1)
                 
@@ -1069,7 +1069,7 @@ def handle_message(message):
                     content = f.read()
                 
                 # 提取所有已配置的设备名称
-                mikrotik_section = re.search(r'###\s*MikroTik 设备\s*\n(.*?)(?=\n###|\Z)', content, re.DOTALL | re.IGNORECASE)
+                mikrotik_section = re.search(r'###\s*MikroTik 设备.*?\n(.*?)(?=\n###|\Z)', content, re.DOTALL | re.IGNORECASE)
                 if mikrotik_section:
                     section_text = mikrotik_section.group(1)
                     device_names = re.findall(r'\*\*([^*]+)\*\*', section_text)
