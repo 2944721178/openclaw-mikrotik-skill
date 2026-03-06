@@ -61,18 +61,6 @@ mikrotik office firewall
 ### 方法 1: 手动安装（当前可用）
 
 ```bash
-# 技能已内置在 OpenClaw 中，无需安装
-# 只需在 TOOLS.md 中配置设备信息即可使用
-```
-
-### 方法 2: 通过 ClawHub（即将上线）
-
-```bash
-# 待发布到 ClawHub 后可用
-npx clawhub install mikrotik
-```
-
-```bash
 # 克隆仓库
 git clone https://github.com/YOUR_USERNAME/openclaw-mikrotik-skill.git
 cd openclaw-mikrotik-skill
@@ -83,6 +71,15 @@ cp -r mikrotik /usr/lib/node_modules/openclaw/skills/
 # 重启 OpenClaw Gateway
 openclaw gateway restart
 ```
+
+### 方法 2: 通过 ClawHub（即将上线）
+
+```bash
+# 待发布到 ClawHub 后可用
+npx clawhub install mikrotik
+```
+
+
 
 ## 配置
 
