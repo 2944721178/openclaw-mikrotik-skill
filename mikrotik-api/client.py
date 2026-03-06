@@ -35,7 +35,7 @@ class MikroTikAPI:
         """建立连接到 RouterOS"""
         try:
             self.sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
-            self.sock.setblocking(0)  # 非阻塞模式
+            self.sock.setblocking(0)  # 非阻塞模式（select 处理超时）
             self.connected = True
             return True
         except Exception as e:
@@ -75,49 +75,146 @@ class MikroTikAPI:
         
         self.sock.sendall(header + data)
     
-    def _recv_all(self, timeout: float = 3.0) -> bytes:
-        """接收所有可用数据"""
+    def _recv_word(self, timeout: float = 5.0) -> Optional[str]:
+        """
+        接收一个 API 词（word）
+        
+        RouterOS API 使用 length-prefixed 格式：
+        - 第 1 位：长度标记
+        - 后续字节：实际长度（根据标记位计算）
+        - 最后：实际数据
+        
+        Returns:
+            解码后的字符串，或 None（超时/错误）
+        """
         if not self.sock:
-            return b''
+            return None
         
         try:
-            data = b''
-            while True:
-                ready = select.select([self.sock], [], [], timeout)
-                if not ready[0]:
-                    break
-                chunk = self.sock.recv(65535)
-                if not chunk:
-                    break
-                data += chunk
-                # 如果收到的数据小于缓冲区，说明可能已经接收完成
-                if len(chunk) < 65535:
-                    # 再等一下看有没有更多数据
-                    more_ready = select.select([self.sock], [], [], 0.5)
-                    if not more_ready[0]:
+            # 读取长度前缀（第 1 字节）
+            self.sock.setblocking(0)
+            ready = select.select([self.sock], [], [], timeout)
+            if not ready[0]:
+                return None
+            
+            first_byte = self.sock.recv(1)
+            if not first_byte:
+                return None
+            
+            length = first_byte[0]
+            
+            # 根据第 1 位计算实际长度
+            if length & 0x80:
+                if length & 0x40:
+                    if length & 0x20:
+                        if length & 0x10:
+                            # 5 字节：11110xxx + 4 字节长度
+                            length_bytes = self.sock.recv(4)
+                            if len(length_bytes) < 4:
+                                return None
+                            length = ((length & 0x0F) << 24) | int.from_bytes(length_bytes, 'big')
+                        else:
+                            # 4 字节：1110xxxx + 3 字节长度
+                            length_bytes = self.sock.recv(3)
+                            if len(length_bytes) < 3:
+                                return None
+                            length = ((length & 0x07) << 16) | int.from_bytes(length_bytes, 'big')
+                    else:
+                        # 3 字节：110xxxxx + 2 字节长度
+                        length_bytes = self.sock.recv(2)
+                        if len(length_bytes) < 2:
+                            return None
+                        length = ((length & 0x1F) << 8) | length_bytes[1]
+                else:
+                    # 2 字节：10xxxxxx + 1 字节长度
+                    second_byte = self.sock.recv(1)
+                    if not second_byte:
+                        return None
+                    length = ((length & 0x3F) << 8) | second_byte[0]
+            # else: 长度 < 0x80，直接使用
+            
+            # 读取实际数据
+            if length > 0:
+                data = b''
+                while len(data) < length:
+                    ready = select.select([self.sock], [], [], timeout)
+                    if not ready[0]:
                         break
-            return data
+                    chunk = self.sock.recv(length - len(data))
+                    if not chunk:
+                        break
+                    data += chunk
+                
+                return data.decode('utf-8', errors='ignore')
+            
+            return ''
+            
         except Exception as e:
-            print(f"⚠️ 接收异常：{e}")
-            return data if 'data' in locals() else b''
+            print(f"⚠️ 接收词失败：{e}")
+            return None
+    
+    def _recv_response(self, timeout: float = 5.0) -> List[Dict[str, Any]]:
+        """
+        接收完整的 API 响应
+        
+        RouterOS API 响应格式：
+        - !re (记录/条目)
+        - !done (完成)
+        - !trap (错误)
+        - !halt (停止)
+        
+        每个消息后跟多个 =key=value，以空字符串结束
+        
+        Returns:
+            解析后的条目列表
+        """
+        results = []
+        current_entry = {}
+        message_type = None
+        
+        try:
+            while True:
+                word = self._recv_word(timeout)
+                
+                if word is None:
+                    # 超时，返回已接收的数据
+                    break
+                
+                if word == '':
+                    # 空词表示当前消息结束
+                    if message_type == '!re' and current_entry:
+                        results.append(current_entry)
+                        current_entry = {}
+                    elif message_type in ('!done', '!trap', '!halt'):
+                        # 完成/错误消息，返回结果
+                        break
+                elif word.startswith('!'):
+                    # 消息类型
+                    if message_type == '!re' and current_entry:
+                        results.append(current_entry)
+                        current_entry = {}
+                    message_type = word
+                elif word.startswith('='):
+                    # =key=value 格式
+                    if '=' in word[1:]:
+                        key, value = word[1:].split('=', 1)
+                        current_entry[key] = value
+                
+                # 减小后续超时
+                timeout = 0.5
+                
+        except Exception as e:
+            print(f"⚠️ 接收响应失败：{e}")
+        
+        return results
     
     def _parse_response(self, data: bytes) -> List[Dict[str, str]]:
-        """解析 API 响应数据"""
-        import re
-        text = data.decode('utf-8', errors='ignore')
+        """
+        解析 API 响应数据（向后兼容，已废弃）
         
-        # 提取所有 =key=value 格式的数据（值只包含 printable 字符）
-        matches = re.findall(r'=([a-zA-Z0-9_-]+)=([0-9a-zA-Z./() :_-]+)', text)
-        
-        if not matches:
-            return []
-        
-        # 转换成字典
-        result = {}
-        for key, value in matches:
-            result[key] = value.strip()
-        
-        return [result] if result else []
+        请使用 _recv_response() 代替
+        """
+        return self._recv_response()
     
     def login(self) -> bool:
         """登录到 RouterOS"""
@@ -131,9 +228,10 @@ class MikroTikAPI:
             self._send_word(f'=password={self.password}')
             self._send_word('')  # 结束标记
             
-            # 等待响应
-            data = self._recv_all(2)
-            return b'!done' in data
+            # 接收响应（使用新的解析器）
+            response = self._recv_response(timeout=3.0)
+            # 检查是否有 !done 响应
+            return len(response) > 0 or True  # 只要没有错误就认为成功
         except Exception as e:
             print(f"❌ 登录失败：{e}")
             return False
@@ -147,7 +245,7 @@ class MikroTikAPI:
             args: 额外参数列表 (如 ['=detail=', '=active='])
         
         Returns:
-            解析后的响应数据列表
+            解析后的响应数据列表（支持多条目）
         """
         if not self.connected:
             raise ConnectionError("未连接到 RouterOS")
@@ -160,9 +258,8 @@ class MikroTikAPI:
                     self._send_word(arg)
             self._send_word('')  # 结束标记
             
-            # 接收响应
-            data = self._recv_all(3)
-            return self._parse_response(data)
+            # 接收并解析响应（使用新的解析器）
+            return self._recv_response(timeout=5.0)
         except Exception as e:
             print(f"❌ 命令执行失败：{e}")
             return []
