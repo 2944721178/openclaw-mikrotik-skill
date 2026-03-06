@@ -232,6 +232,73 @@ class NetworkCommands:
         return self.api.run_command('/queue/type/print')
 
 
+class RoutingCommands:
+    """路由相关命令"""
+    
+    def __init__(self, api: MikroTikAPI):
+        self.api = api
+    
+    def get_routes(self) -> List[Dict]:
+        """获取路由表"""
+        return self.api.run_command('/ip/route/print')
+    
+    def get_static_routes(self) -> List[Dict]:
+        """获取静态路由"""
+        return self.api.run_command('/ip/route/print', ['=.where=dynamic=false'])
+    
+    def get_dynamic_routes(self) -> List[Dict]:
+        """获取动态路由"""
+        return self.api.run_command('/ip/route/print', ['=.where=dynamic=true'])
+    
+    def get_ospf_instances(self) -> List[Dict]:
+        """获取 OSPF 实例配置"""
+        return self.api.run_command('/routing/ospf/instance/print')
+    
+    def get_ospf_areas(self) -> List[Dict]:
+        """获取 OSPF 区域配置"""
+        return self.api.run_command('/routing/ospf/area/print')
+    
+    def get_ospf_interfaces(self) -> List[Dict]:
+        """获取 OSPF 接口配置"""
+        return self.api.run_command('/routing/ospf/interface/print')
+    
+    def get_ospf_neighbors(self) -> List[Dict]:
+        """获取 OSPF 邻居状态"""
+        return self.api.run_command('/routing/ospf/neighbor/print')
+    
+    def get_ospf_lsdb(self) -> List[Dict]:
+        """获取 OSPF 链路状态数据库"""
+        return self.api.run_command('/routing/ospf/lsdb/print')
+    
+    def get_bgp_instances(self) -> List[Dict]:
+        """获取 BGP 实例配置"""
+        return self.api.run_command('/routing/bgp/instance/print')
+    
+    def get_bgp_peers(self) -> List[Dict]:
+        """获取 BGP 对等体配置"""
+        return self.api.run_command('/routing/bgp/peer/print')
+    
+    def get_bgp_sessions(self) -> List[Dict]:
+        """获取 BGP 会话状态"""
+        return self.api.run_command('/routing/bgp/session/print')
+    
+    def get_bgp_routes(self) -> List[Dict]:
+        """获取 BGP 路由"""
+        return self.api.run_command('/routing/bgp/advertised-route/print')
+    
+    def get_bgp_networks(self) -> List[Dict]:
+        """获取 BGP 网络宣告"""
+        return self.api.run_command('/routing/bgp/network/print')
+    
+    def get_mpls_interfaces(self) -> List[Dict]:
+        """获取 MPLS 接口配置"""
+        return self.api.run_command('/mpls/interface/print')
+    
+    def get_mpls_ldp_neighbors(self) -> List[Dict]:
+        """获取 MPLS LDP 邻居"""
+        return self.api.run_command('/mpls/ldp/neighbor/print')
+
+
 class UserCommands:
     """用户和 PPP 相关命令"""
     
@@ -268,6 +335,7 @@ class QuickCommands:
         self.firewall = FirewallCommands(api)
         self.network = NetworkCommands(api)
         self.user = UserCommands(api)
+        self.routing = RoutingCommands(api)
     
     def status(self) -> Dict:
         """获取设备完整状态"""

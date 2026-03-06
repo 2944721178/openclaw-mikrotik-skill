@@ -501,6 +501,91 @@ def format_bridge(api, quick):
     return "\n".join(lines)
 
 
+def format_routing(api, quick):
+    """格式化路由配置"""
+    lines = [
+        "🌐 路由配置",
+        "=" * 60,
+    ]
+    
+    # 路由表统计
+    routes = quick.routing.get_routes()
+    static_routes = [r for r in routes if r.get('dynamic', '') != 'true']
+    dynamic_routes = [r for r in routes if r.get('dynamic', '') == 'true']
+    
+    lines.append(f"\n📊 路由表统计:")
+    lines.append(f"  总路由数：{len(routes)}")
+    lines.append(f"  静态路由：{len(static_routes)}")
+    lines.append(f"  动态路由：{len(dynamic_routes)}")
+    
+    # 显示静态路由
+    lines.append(f"\n🛤️ 静态路由:")
+    if static_routes:
+        for i, route in enumerate(static_routes[:15], 1):
+            dst = route.get('dst-address', 'N/A')
+            gateway = route.get('gateway', 'N/A')
+            distance = route.get('distance', '1')
+            disabled = route.get('disabled', '') == 'true'
+            status = "⏸️" if disabled else "✅"
+            lines.append(f"  {status} [{i}] {dst} via {gateway} (dist: {distance})")
+        if len(static_routes) > 15:
+            lines.append(f"  ... 还有 {len(static_routes) - 15} 条")
+    else:
+        lines.append("  (无静态路由)")
+    
+    # OSPF 状态
+    ospf_instances = quick.routing.get_ospf_instances()
+    if ospf_instances:
+        lines.append(f"\n🔵 OSPF 配置 ({len(ospf_instances)} 实例):")
+        for inst in ospf_instances:
+            name = inst.get('name', 'default')
+            router_id = inst.get('router-id', 'N/A')
+            lines.append(f"  - {name} (Router ID: {router_id})")
+        
+        # OSPF 邻居
+        ospf_neighbors = quick.routing.get_ospf_neighbors()
+        if ospf_neighbors:
+            lines.append(f"\n🔵 OSPF 邻居 ({len(ospf_neighbors)}):")
+            for nbr in ospf_neighbors[:10]:
+                addr = nbr.get('neighbor-address', 'N/A')
+                state = nbr.get('state', 'N/A')
+                interface = nbr.get('interface', 'N/A')
+                state_icon = "✅" if state == 'Full' else "⏳"
+                lines.append(f"  {state_icon} {addr} - {state} ({interface})")
+            if len(ospf_neighbors) > 10:
+                lines.append(f"  ... 还有 {len(ospf_neighbors) - 10} 个邻居")
+    else:
+        lines.append("\n🔵 OSPF: 未配置")
+    
+    # BGP 状态
+    bgp_instances = quick.routing.get_bgp_instances()
+    if bgp_instances:
+        lines.append(f"\n🟠 BGP 配置 ({len(bgp_instances)} 实例):")
+        for inst in bgp_instances:
+            name = inst.get('name', 'default')
+            as_num = inst.get('as', 'N/A')
+            router_id = inst.get('router-id', 'N/A')
+            lines.append(f"  - {name} (AS: {as_num}, Router ID: {router_id})")
+        
+        # BGP 对等体
+        bgp_peers = quick.routing.get_bgp_peers()
+        if bgp_peers:
+            lines.append(f"\n🟠 BGP 对等体 ({len(bgp_peers)}):")
+            for peer in bgp_peers[:10]:
+                name = peer.get('name', 'N/A')
+                remote_addr = peer.get('remote-address', 'N/A')
+                remote_as = peer.get('remote-as', 'N/A')
+                disabled = peer.get('disabled', '') == 'true'
+                status = "⏸️" if disabled else "✅"
+                lines.append(f"  {status} {name} - {remote_addr} (AS{remote_as})")
+            if len(bgp_peers) > 10:
+                lines.append(f"  ... 还有 {len(bgp_peers) - 10} 个对等体")
+    else:
+        lines.append("\n🟠 BGP: 未配置")
+    
+    return "\n".join(lines)
+
+
 def format_queues(api, quick):
     """格式化队列/带宽限制配置"""
     lines = [
@@ -657,6 +742,8 @@ def execute_command(device, command):
             result = format_bridge(api, quick)
         elif 'queue' in command.lower() or '队列' in command or '带宽' in command or '限速' in command:
             result = format_queues(api, quick)
+        elif 'route' in command.lower() or 'routing' in command.lower() or '路由' in command.lower() or 'ospf' in command.lower() or 'bgp' in command.lower():
+            result = format_routing(api, quick)
         else:
             # 执行自定义命令
             results = api.run_command(command)
