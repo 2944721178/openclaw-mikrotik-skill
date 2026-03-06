@@ -345,6 +345,162 @@ def format_services(api, quick):
     return "\n".join(lines)
 
 
+def format_traffic(api, quick):
+    """格式化接口流量统计"""
+    lines = [
+        "📈 接口流量统计",
+        "=" * 60,
+    ]
+    
+    stats = quick.network.get_interface_stats()
+    
+    if not stats:
+        lines.append("  (无数据)")
+        return "\n".join(lines)
+    
+    # 表头
+    lines.append("")
+    lines.append(f"  {'接口':<20} {'接收 ↓':<15} {'发送 ↑':<15} {'包数':<12} {'错误/丢弃'}")
+    lines.append("  " + "-" * 70)
+    
+    for iface in stats:
+        name = iface.get('name', 'unknown')[:18]
+        rx_bytes = int(iface.get('rx-byte', 0))
+        tx_bytes = int(iface.get('tx-byte', 0))
+        rx_packets = int(iface.get('rx-packet', 0))
+        tx_packets = int(iface.get('tx-packet', 0))
+        rx_errors = int(iface.get('rx-error', 0))
+        tx_errors = int(iface.get('tx-error', 0))
+        rx_drops = int(iface.get('rx-drop', 0))
+        tx_drops = int(iface.get('tx-drop', 0))
+        
+        # 格式化流量（转换为 MB/GB）
+        def format_bytes(b):
+            if b >= 1024**3:
+                return f"{b/1024**3:.1f}GB"
+            elif b >= 1024**2:
+                return f"{b/1024**2:.1f}MB"
+            elif b >= 1024:
+                return f"{b/1024:.1f}KB"
+            else:
+                return f"{b}B"
+        
+        rx_str = format_bytes(rx_bytes)
+        tx_str = format_bytes(tx_bytes)
+        packets_str = f"{rx_packets + tx_packets:,}"
+        errors_str = f"{rx_errors + tx_errors}/{rx_drops + tx_drops}"
+        
+        lines.append(f"  {name:<20} {rx_str:>14} {tx_str:>14} {packets_str:>12} {errors_str}")
+    
+    lines.append("  " + "-" * 70)
+    lines.append(f"\n总计：{len(stats)} 个接口")
+    
+    return "\n".join(lines)
+
+
+def format_interface_detail(api, quick, interface_name: str = ''):
+    """格式化接口详细信息"""
+    lines = [
+        f"🔌 接口详情" + (f": {interface_name}" if interface_name else ""),
+        "=" * 60,
+    ]
+    
+    if interface_name:
+        stats = quick.network.get_interface_stats(interface_name)
+    else:
+        stats = quick.network.get_interface_stats()
+    
+    if not stats:
+        lines.append(f"  ❌ 未找到接口：{interface_name}" if interface_name else "  (无数据)")
+        return "\n".join(lines)
+    
+    for iface in stats:
+        name = iface.get('name', 'unknown')
+        iface_type = iface.get('type', 'N/A')
+        running = iface.get('running', 'false') == 'true'
+        mtu = iface.get('mtu', 'N/A')
+        mac = iface.get('mac-address', 'N/A')
+        rx_bytes = int(iface.get('rx-byte', 0))
+        tx_bytes = int(iface.get('tx-byte', 0))
+        
+        lines.append(f"\n📌 {name}")
+        lines.append(f"  类型：{iface_type}")
+        lines.append(f"  状态：{'✅ 运行中' if running else '❌ 已关闭'}")
+        lines.append(f"  MTU: {mtu}")
+        lines.append(f"  MAC: {mac}")
+        lines.append(f"  接收：{rx_bytes / 1024 / 1024:.2f} MB ({int(iface.get('rx-packet', 0)):,} 包)")
+        lines.append(f"  发送：{tx_bytes / 1024 / 1024:.2f} MB ({int(iface.get('tx-packet', 0)):,} 包)")
+        
+        # VLAN 信息
+        if iface_type == 'vlan':
+            vlan_id = iface.get('vlan-id', 'N/A')
+            interface = iface.get('interface', 'N/A')
+            lines.append(f"  VLAN ID: {vlan_id} (on {interface})")
+        
+        # Bridge 信息
+        if iface_type == 'bridge':
+            lines.append(f"  桥接模式")
+        
+        # WireGuard 信息
+        if iface_type == 'wireguard':
+            lines.append(f"  WireGuard VPN 接口")
+    
+    return "\n".join(lines)
+
+
+def format_vlan(api, quick):
+    """格式化 VLAN 配置"""
+    lines = [
+        "🏷️ VLAN 配置",
+        "=" * 60,
+    ]
+    
+    vlans = quick.network.get_vlan()
+    if vlans:
+        for vlan in vlans:
+            name = vlan.get('name', 'N/A')
+            vlan_id = vlan.get('vlan-id', 'N/A')
+            interface = vlan.get('interface', 'N/A')
+            running = vlan.get('running', 'false') == 'true'
+            status = "✅" if running else "❌"
+            lines.append(f"  {status} {name} (ID: {vlan_id}, on {interface})")
+    else:
+        lines.append("  (无 VLAN 配置)")
+    
+    return "\n".join(lines)
+
+
+def format_bridge(api, quick):
+    """格式化桥接配置"""
+    lines = [
+        "🌉 桥接配置",
+        "=" * 60,
+    ]
+    
+    bridges = quick.network.get_bridge()
+    if bridges:
+        for bridge in bridges:
+            name = bridge.get('name', 'N/A')
+            running = bridge.get('running', 'false') == 'true'
+            status = "✅" if running else "❌"
+            lines.append(f"  {status} {name}")
+        
+        # 桥接端口
+        lines.append("\n🔌 桥接端口:")
+        ports = quick.network.get_bridge_ports()
+        for port in ports[:20]:  # 最多显示 20 个
+            bridge_name = port.get('bridge', 'N/A')
+            interface = port.get('interface', 'N/A')
+            hw = port.get('hw', 'false') == 'true'
+            lines.append(f"  - {interface} → {bridge_name}" + (" (硬件转发)" if hw else ""))
+        if len(ports) > 20:
+            lines.append(f"  ... 还有 {len(ports) - 20} 个端口")
+    else:
+        lines.append("  (无桥接配置)")
+    
+    return "\n".join(lines)
+
+
 def execute_command(device, command):
     """
     执行 MikroTik 命令
@@ -395,7 +551,17 @@ def execute_command(device, command):
         elif 'firewall' in command.lower() or '防火墙' in command:
             result = format_firewall(api, quick)
         elif 'interface' in command.lower() or '接口' in command:
-            result = format_interfaces(api, quick)
+            # 检查是否要查看详细信息
+            if 'detail' in command.lower() or '详细' in command:
+                # 提取接口名
+                import re
+                match = re.search(r'(ether\d+|bridge|vlan\d+|wireguard\w+|cap\d+|lo)', command)
+                iface_name = match.group(1) if match else ''
+                result = format_interface_detail(api, quick, iface_name)
+            else:
+                result = format_interfaces(api, quick)
+        elif 'traffic' in command.lower() or '流量' in command:
+            result = format_traffic(api, quick)
         elif 'dhcp' in command.lower():
             result = format_dhcp(api, quick)
         elif 'arp' in command.lower():
@@ -408,6 +574,10 @@ def execute_command(device, command):
             result = format_logs(api, quick)
         elif 'service' in command.lower() or '服务' in command:
             result = format_services(api, quick)
+        elif 'vlan' in command.lower():
+            result = format_vlan(api, quick)
+        elif 'bridge' in command.lower() or '桥接' in command:
+            result = format_bridge(api, quick)
         else:
             # 执行自定义命令
             results = api.run_command(command)

@@ -183,6 +183,41 @@ class NetworkCommands:
         if interface:
             return self.api.run_command('/interface/print', [f'=.where=name={interface}'])
         return self.api.run_command('/interface/print')
+    
+    def get_interface_stats(self, interface: str = '') -> List[Dict]:
+        """
+        获取接口详细统计（字节数、包数）
+        
+        Args:
+            interface: 指定接口名，空则返回所有接口
+        """
+        # 获取所有接口统计，然后在 Python 层面过滤
+        all_stats = self.api.run_command('/interface/print')
+        
+        if interface:
+            # 过滤指定接口
+            return [iface for iface in all_stats if iface.get('name') == interface]
+        return all_stats
+    
+    def get_wireguard_status(self) -> List[Dict]:
+        """获取 WireGuard 接口状态"""
+        return self.api.run_command('/interface/wireguard/print')
+    
+    def get_bridge(self) -> List[Dict]:
+        """获取桥接配置"""
+        return self.api.run_command('/interface/bridge/print')
+    
+    def get_vlan(self) -> List[Dict]:
+        """获取 VLAN 配置"""
+        return self.api.run_command('/interface/vlan/print')
+    
+    def get_pppoe(self) -> List[Dict]:
+        """获取 PPPoE 客户端配置"""
+        return self.api.run_command('/interface/pppoe-client/print')
+    
+    def get_bonding(self) -> List[Dict]:
+        """获取链路聚合（Bonding）配置"""
+        return self.api.run_command('/interface/bonding/print')
 
 
 class UserCommands:
