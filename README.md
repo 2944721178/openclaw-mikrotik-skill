@@ -126,10 +126,10 @@ mikrotik ap wifi
 
 ```bash
 cd mikrotik-api
-python3 cli.py 10.0.5.4 status      # 查看设备状态
-python3 cli.py 10.0.5.4 firewall    # 查看防火墙
-python3 cli.py 10.0.5.4 interfaces  # 查看接口
-python3 cli.py 10.0.5.4 routes      # 查看路由
+python3 cli.py 192.168.1.1 status      # 查看设备状态
+python3 cli.py 192.168.1.1 firewall    # 查看防火墙
+python3 cli.py 192.168.1.1 interfaces  # 查看接口
+python3 cli.py 192.168.1.1 routes      # 查看路由
 ```
 
 ### Python API
@@ -137,7 +137,7 @@ python3 cli.py 10.0.5.4 routes      # 查看路由
 ```python
 from mikrotik_api import MikroTikAPI, QuickCommands
 
-with MikroTikAPI('10.0.5.4') as api:
+with MikroTikAPI('192.168.1.1') as api:
     api.login()
     quick = QuickCommands(api)
     quick.print_status()
@@ -221,7 +221,7 @@ mikrotik/
 
 ```bash
 cd mikrotik-api
-python3 cli.py 10.0.5.4 status
+python3 cli.py 192.168.1.1 status
 ```
 
 ### 添加新功能

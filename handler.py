@@ -45,7 +45,7 @@ def get_device_config(device_name=None):
             
             # 解析 MikroTik 设备配置
             # 格式：- **名称**：IP, 用户名，密码 (可选)
-            # 示例：- **工位**：10.0.5.4, admin, 空密码
+            # 示例：- **office**: 192.168.1.1, admin, 空密码
             # 示例：- **home**：192.168.88.1, admin, mypassword123
             mikrotik_section = re.search(r'###\s*MikroTik 设备.*?\n(.*?)(?=\n###|\Z)', content, re.DOTALL | re.IGNORECASE)
             if mikrotik_section:
@@ -1017,7 +1017,7 @@ def execute_command(device, command):
         error_msg += "请在 TOOLS.md 中添加 MikroTik 设备配置:\n"
         error_msg += "```markdown\n"
         error_msg += "### MikroTik 设备\n"
-        error_msg += "- **工位**：10.0.5.4, admin, 空密码\n"
+        error_msg += "- **office**: 192.168.1.1, admin, 空密码\n"
         error_msg += "- **home**：192.168.88.1, admin, yourpassword\n"
         error_msg += "```\n"
         error_msg += "\n或使用环境变量:\n"

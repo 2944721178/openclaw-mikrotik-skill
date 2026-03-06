@@ -21,9 +21,9 @@ class MikroTikScanner:
     BROADCAST_ADDR = '255.255.255.255'
     
     # MikroTik OUI 前缀（用于识别）
+    # 这些是 MikroTik 官方的 MAC 地址前缀，用于识别设备品牌
     MIKROTIK_OUIS = [
-        '00:0C:42', '4C:5E:0C', 'D4:CA:6D', 'CC:2D:E0',
-        '08:55:31', '48:8F:5A', '2C:AB:00', '64:D1:54',
+        '00:0C:42', '4C:5E:0C', 'D4:CA:6D',
         '78:8B:77', '84:D1:54', 'B8:69:F4'
     ]
     
