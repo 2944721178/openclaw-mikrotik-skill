@@ -218,6 +218,18 @@ class NetworkCommands:
     def get_bonding(self) -> List[Dict]:
         """获取链路聚合（Bonding）配置"""
         return self.api.run_command('/interface/bonding/print')
+    
+    def get_simple_queues(self) -> List[Dict]:
+        """获取简单队列（带宽限制）配置"""
+        return self.api.run_command('/queue/simple/print')
+    
+    def get_queue_tree(self) -> List[Dict]:
+        """获取队列树配置"""
+        return self.api.run_command('/queue/tree/print')
+    
+    def get_queue_types(self) -> List[Dict]:
+        """获取队列类型定义"""
+        return self.api.run_command('/queue/type/print')
 
 
 class UserCommands:

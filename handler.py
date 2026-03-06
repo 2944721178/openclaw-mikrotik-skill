@@ -501,6 +501,83 @@ def format_bridge(api, quick):
     return "\n".join(lines)
 
 
+def format_queues(api, quick):
+    """格式化队列/带宽限制配置"""
+    lines = [
+        "📊 队列/带宽限制",
+        "=" * 60,
+    ]
+    
+    # 简单队列
+    lines.append("\n🎯 简单队列:")
+    queues = quick.network.get_simple_queues()
+    if queues:
+        for i, queue in enumerate(queues, 1):
+            name = queue.get('name', 'N/A')
+            target = queue.get('target', 'N/A')
+            max_limit = queue.get('max-limit', '0/0')
+            limit_at = queue.get('limit-at', '0/0')
+            disabled = queue.get('disabled', '') == 'true'
+            status = "⏸️" if disabled else "✅"
+            
+            # 格式化带宽（转换为 Mbps）
+            def format_bw(bw_str):
+                try:
+                    down, up = bw_str.split('/')
+                    down_bps = int(down) if down.isdigit() else 0
+                    up_bps = int(up) if up.isdigit() else 0
+                    down_mbps = down_bps / 1000 / 1000
+                    up_mbps = up_bps / 1000 / 1000
+                    if down_mbps >= 1000:
+                        down_str = f"{down_mbps/1000:.1f}G"
+                    else:
+                        down_str = f"{down_mbps:.0f}M"
+                    if up_mbps >= 1000:
+                        up_str = f"{up_mbps/1000:.1f}G"
+                    else:
+                        up_str = f"{up_mbps:.0f}M"
+                    return f"{down_str}/{up_str}"
+                except:
+                    return bw_str
+            
+            bw_display = format_bw(max_limit)
+            lines.append(f"  {status} [{i}] {name}")
+            lines.append(f"      目标：{target}")
+            lines.append(f"      限制：{bw_display} (下载/上传)")
+            if limit_at != '0/0':
+                lines.append(f"      保证：{format_bw(limit_at)}")
+    else:
+        lines.append("  (无简单队列)")
+    
+    # 队列树
+    queue_tree = quick.network.get_queue_tree()
+    if queue_tree:
+        lines.append(f"\n🌳 队列树 ({len(queue_tree)} 条):")
+        for i, qt in enumerate(queue_tree[:10], 1):
+            name = qt.get('name', 'N/A')
+            parent = qt.get('parent', 'N/A')
+            packet_marks = qt.get('packet-marks', 'N/A')
+            max_limit = qt.get('max-limit', '0')
+            disabled = qt.get('disabled', '') == 'true'
+            status = "⏸️" if disabled else "✅"
+            lines.append(f"  {status} [{i}] {name} (parent: {parent})")
+        if len(queue_tree) > 10:
+            lines.append(f"  ... 还有 {len(queue_tree) - 10} 条")
+    
+    # 队列类型
+    queue_types = quick.network.get_queue_types()
+    if queue_types:
+        lines.append(f"\n📦 队列类型 ({len(queue_types)}):")
+        for qt in queue_types[:5]:
+            name = qt.get('name', 'N/A')
+            kind = qt.get('kind', 'N/A')
+            lines.append(f"  - {name} ({kind})")
+        if len(queue_types) > 5:
+            lines.append(f"  ... 还有 {len(queue_types) - 5} 种")
+    
+    return "\n".join(lines)
+
+
 def execute_command(device, command):
     """
     执行 MikroTik 命令
@@ -578,6 +655,8 @@ def execute_command(device, command):
             result = format_vlan(api, quick)
         elif 'bridge' in command.lower() or '桥接' in command:
             result = format_bridge(api, quick)
+        elif 'queue' in command.lower() or '队列' in command or '带宽' in command or '限速' in command:
+            result = format_queues(api, quick)
         else:
             # 执行自定义命令
             results = api.run_command(command)
