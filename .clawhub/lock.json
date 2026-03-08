@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "1panel-skills": {
+      "version": "0.0.1",
+      "installedAt": 1772796745242
+    },
+    "mikrotik": {
+      "version": "1.8.3",
+      "installedAt": 1772797435150
+    },
+    "weather": {
+      "version": "1.0.0",
+      "installedAt": 1772800548944
+    }
+  }
+}
