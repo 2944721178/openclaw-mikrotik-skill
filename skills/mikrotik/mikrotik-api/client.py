@@ -228,10 +228,21 @@ class MikroTikAPI:
             self._send_word(f'=password={self.password}')
             self._send_word('')  # 结束标记
             
-            # 接收响应（使用新的解析器）
+            # 接收响应
             response = self._recv_response(timeout=3.0)
-            # 检查是否有 !done 响应
-            return len(response) > 0 or True  # 只要没有错误就认为成功
+            
+            # 检查是否有 !done 响应（登录成功标志）
+            for item in response:
+                if item.get('ret') == '!done':
+                    return True
+            
+            # 如果没有 !done 但有数据，也算成功（兼容旧版本）
+            if len(response) > 0:
+                return True
+            
+            # 没有任何响应，可能是连接问题
+            return False
+            
         except Exception as e:
             print(f"❌ 登录失败：{e}")
             return False
